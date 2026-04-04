@@ -1,5 +1,7 @@
 # 🎵 Music Recommender Simulation
 
+![Screenshot](Screenshot%202026-04-04%20171946.png)
+
 ## Project Summary
 
 In this project you will build and explain a small music recommender system.
@@ -16,7 +18,6 @@ Replace this paragraph with your own summary of what your version does.
 ---
 
 ## How The System Works
-
 Explain your design in plain language.
 
 Some prompts to answer:
@@ -29,6 +30,71 @@ Some prompts to answer:
 
 You can include a simple diagram or bullet list if helpful.
 
+Real-world recommenders (like Spotify or YouTube) blend behavior data (what similar users liked, skipped, replayed, or saved) with content signals (the attributes of each song or video) to predict what a specific person will enjoy next. This simulation prioritizes transparent, content-based matching: each song gets a score based on how closely its vibe-related features match the user's preferences, and the highest-scoring songs are recommended.
+
+`Song` features used in this simulation:
+- `genre`
+- `mood`
+- `energy`
+- `tempo_bpm`
+- `valence`
+- `danceability`
+- `acousticness`
+
+`UserProfile` features used in this simulation:
+
+- `preferred_genres` (or one target genre)
+- `preferred_moods` (or one target mood)
+- `target_energy`
+- `target_tempo_bpm`
+- `target_valence`
+- `target_danceability`
+- `target_acousticness`
+
+`Recommender` flow:
+- Compute a weighted score for each song using exact matches for categorical features and closeness for numeric features.
+- Rank songs by total score.
+- Return the top `N` songs as recommendations.
+
+
+This recommender uses a transparent, content-based scoring process. It compares each song in the catalog to one user profile, gives each song a score, then returns the highest-scoring results.
+
+Input (User Preferences):
+
+- Preferred genre
+- Preferred mood
+- Target energy value (0.0 to 1.0)
+- Number of recommendations to return (Top K)
+
+Process (Scoring Each Song):
+
+For each song in the CSV, compute:
+
+- Genre match: +2.0 points if the song genre matches the preferred genre
+- Mood match: +1.0 point if the song mood matches the preferred mood
+- Energy similarity: from 0.0 to +2.0 points based on closeness to the user's target energy
+
+Energy similarity formula:
+
+energy_points = 2.0 * (1 - abs(target_energy - song_energy))
+
+Total score formula:
+
+total_score = genre_points + mood_points + energy_points
+
+Output (Ranking):
+
+- Store each song with its total score
+- Sort songs by score (highest to lowest)
+- Use tie-breakers for equal scores (smaller energy difference first, then title order)
+- Return Top K songs as recommendations
+
+Potential bias to watch for:
+- Compute a weighted score for each song using exact matches for categorical features and closeness for numeric features.
+- Rank songs by total score.
+- Return the top `N` songs as recommendations.
+- This system may over-prioritize genre (+2.0) relative to mood (+1.0), which can cause it to miss songs that strongly match mood and energy but use a different genre label.
+- Exact-match rules for genre and mood can also under-recommend cross-genre or mood-adjacent songs that a human listener might still enjoy.
 ---
 
 ## Getting Started
@@ -208,4 +274,6 @@ A few sentences about what you learned:
 - What surprised you about how your system behaved
 - How did building this change how you think about real music recommenders
 - Where do you think human judgment still matters, even if the model seems "smart"
+
+
 
