@@ -1,6 +1,13 @@
 # 🎵 Music Recommender Simulation
 
-![Screenshot](Screenshot%202026-04-04%20171946.png)
+Screenshots:
+
+Phase3: Implementation:
+![alt text](pop/happy_profile.png)
+
+Phase 4: Evaluate and Explain
+![alt text](adverse_1.png) 
+![alt text](adverse_2.png)
 
 ## Project Summary
 
