@@ -2,6 +2,11 @@ import csv
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 
+try:
+    from .retriever import SongRetriever
+except ImportError:
+    from retriever import SongRetriever
+
 
 def _get_value(item, key: str):
     """Return a field value from either a dict or a dataclass object."""
@@ -10,18 +15,50 @@ def _get_value(item, key: str):
     return getattr(item, key)
 
 
+def _normalize_text(value) -> str:
+    """Normalize text for stable matching and simpler guardrails."""
+    return str(value).strip().lower()
+
+
+def _normalize_profile(user_prefs):
+    """Return a normalized view of a user profile without mutating the original."""
+    if isinstance(user_prefs, dict):
+        normalized = dict(user_prefs)
+    else:
+        normalized = {
+            key: getattr(user_prefs, key)
+            for key in (
+                "favorite_genre",
+                "favorite_mood",
+                "target_energy",
+                "target_tempo_bpm",
+                "target_valence",
+                "target_danceability",
+                "target_acousticness",
+                "likes_acoustic",
+            )
+        }
+
+    normalized["favorite_genre"] = _normalize_text(normalized["favorite_genre"])
+    normalized["favorite_mood"] = _normalize_text(normalized["favorite_mood"])
+    normalized["likes_acoustic"] = normalized.get("likes_acoustic") is True
+    return normalized
+
+
 def score_song(user_prefs, song) -> Tuple[float, List[str]]:
     """Score one song and return its numeric score plus explanation reasons."""
     reasons: List[str] = []
     score = 0.0
 
-    favorite_genre = _get_value(user_prefs, "favorite_genre")
-    favorite_mood = _get_value(user_prefs, "favorite_mood")
-    target_energy = float(_get_value(user_prefs, "target_energy"))
-    likes_acoustic = bool(_get_value(user_prefs, "likes_acoustic"))
+    normalized_user = _normalize_profile(user_prefs)
 
-    song_genre = _get_value(song, "genre")
-    song_mood = _get_value(song, "mood")
+    favorite_genre = normalized_user["favorite_genre"]
+    favorite_mood = normalized_user["favorite_mood"]
+    target_energy = float(normalized_user["target_energy"])
+    likes_acoustic = normalized_user["likes_acoustic"]
+
+    song_genre = _normalize_text(_get_value(song, "genre"))
+    song_mood = _normalize_text(_get_value(song, "mood"))
     song_energy = float(_get_value(song, "energy"))
     song_acousticness = float(_get_value(song, "acousticness"))
 
@@ -105,7 +142,8 @@ class Recommender:
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
         _, reasons = score_song(user, song)
-        return ", ".join(reasons)
+        evidence = SongRetriever([]).retrieve(user, song)
+        return ", ".join(reasons + evidence[:2])
 
 def load_songs(csv_path: str) -> List[Dict]:
     """
@@ -145,6 +183,8 @@ def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tup
         for song in songs
     ]
 
+    retriever = SongRetriever(songs)
+
     ranked_songs = sorted(
         scored_songs,
         key=lambda item: (
@@ -155,6 +195,6 @@ def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tup
     )
 
     return [
-        (song, score, ", ".join(reasons))
+        (song, score, ", ".join(reasons + retriever.retrieve(user_prefs, song)[:2]))
         for song, score, reasons in ranked_songs[:k]
     ]

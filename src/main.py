@@ -10,37 +10,136 @@ You will implement the functions in recommender.py:
 """
 
 try:
-    from .recommender import load_songs, recommend_songs
+    from pathlib import Path
+    import streamlit as st
+    from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+    from .recommender import load_songs
+    from .workflow import run_recommendation_workflow
 except ImportError:
-    from recommender import load_songs, recommend_songs
+    from pathlib import Path
+    import streamlit as st
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+    except ImportError:
+        get_script_run_ctx = lambda: None  # type: ignore[assignment]
+
+    from recommender import load_songs
+    from workflow import run_recommendation_workflow
 
 
-def profile_warnings(user_prefs: dict) -> list[str]:
-    """Return simple diagnostics for intentionally adversarial profiles."""
-    warnings: list[str] = []
-
-    target_energy = user_prefs.get("target_energy")
-    if not isinstance(target_energy, (int, float)):
-        warnings.append("target_energy is non-numeric")
-    elif not (0.0 <= float(target_energy) <= 1.0):
-        warnings.append("target_energy is outside [0, 1]")
-
-    likes_acoustic = user_prefs.get("likes_acoustic")
-    if not isinstance(likes_acoustic, bool):
-        warnings.append("likes_acoustic is not a bool (Python bool coercion may surprise)")
-
-    genre = str(user_prefs.get("favorite_genre", ""))
-    mood = str(user_prefs.get("favorite_mood", ""))
-    if genre != genre.strip() or mood != mood.strip():
-        warnings.append("genre/mood include leading or trailing whitespace")
-    if genre.lower() != genre or mood.lower() != mood:
-        warnings.append("genre/mood are not lowercase (exact match is case-sensitive)")
-
-    return warnings
+def _songs_csv_path() -> str:
+    """Return the absolute path to the songs CSV regardless of the launch directory."""
+    return str(Path(__file__).resolve().parents[1] / "data" / "songs.csv")
 
 
-def main() -> None:
-    songs = load_songs("data/songs.csv") 
+def _profile_catalog() -> dict[str, dict]:
+    return {
+        "High-Energy Pop": {
+            "favorite_genre": "pop",
+            "favorite_mood": "happy",
+            "target_energy": 0.82,
+            "target_tempo_bpm": 120,
+            "target_valence": 0.85,
+            "target_danceability": 0.80,
+            "target_acousticness": 0.20,
+            "likes_acoustic": False,
+        },
+        "Chill Lofi": {
+            "favorite_genre": "lofi",
+            "favorite_mood": "chill",
+            "target_energy": 0.38,
+            "target_tempo_bpm": 78,
+            "target_valence": 0.58,
+            "target_danceability": 0.60,
+            "target_acousticness": 0.82,
+            "likes_acoustic": True,
+        },
+        "Deep Intense Rock": {
+            "favorite_genre": "rock",
+            "favorite_mood": "intense",
+            "target_energy": 0.92,
+            "target_tempo_bpm": 150,
+            "target_valence": 0.45,
+            "target_danceability": 0.55,
+            "target_acousticness": 0.12,
+            "likes_acoustic": False,
+        },
+    }
+
+
+def _render_profile_result(title: str, workflow_result: dict) -> None:
+    st.subheader(title)
+    st.caption(f"Confidence: {workflow_result['confidence']:.2f}")
+
+    if workflow_result["warnings"]:
+        st.warning("Profile warnings:\n- " + "\n- ".join(workflow_result["warnings"]))
+
+    for rank, (song, score, explanation) in enumerate(workflow_result["recommendations"], start=1):
+        with st.container(border=True):
+            st.markdown(f"**{rank}. {song['title']}**  ")
+            st.write(f"Artist: {song['artist']}")
+            st.write(f"Final score: {score:.2f}")
+            st.write(f"Reasons: {explanation}")
+
+
+def render_streamlit_app() -> None:
+    st.set_page_config(page_title="Music Recommender Simulation", layout="wide")
+    st.title("Music Recommender Simulation")
+    st.write(
+        "A transparent music recommender with deterministic ranking, lightweight retrieval, "
+        "and simple workflow guardrails."
+    )
+
+    songs = load_songs(_songs_csv_path())
+    profiles = _profile_catalog()
+
+    col_left, col_right = st.columns([0.9, 1.1])
+
+    with col_left:
+        st.subheader("User Profile")
+        selected_profile_name = st.selectbox("Choose a starting profile", list(profiles.keys()))
+        selected_profile = profiles[selected_profile_name].copy()
+
+        favorite_genre = st.text_input("Favorite genre", value=selected_profile["favorite_genre"])
+        favorite_mood = st.text_input("Favorite mood", value=selected_profile["favorite_mood"])
+        target_energy = st.slider("Target energy", 0.0, 1.0, float(selected_profile["target_energy"]), 0.01)
+        target_tempo_bpm = st.number_input("Target tempo (BPM)", min_value=40, max_value=220, value=int(selected_profile["target_tempo_bpm"]), step=1)
+        target_valence = st.slider("Target valence", 0.0, 1.0, float(selected_profile["target_valence"]), 0.01)
+        target_danceability = st.slider("Target danceability", 0.0, 1.0, float(selected_profile["target_danceability"]), 0.01)
+        target_acousticness = st.slider("Target acousticness", 0.0, 1.0, float(selected_profile["target_acousticness"]), 0.01)
+        likes_acoustic = st.checkbox("Likes acoustic music", value=bool(selected_profile["likes_acoustic"]))
+        top_k = st.slider("Number of recommendations", 1, 5, 3)
+
+        run_button = st.button("Generate recommendations", type="primary")
+
+    with col_right:
+        st.subheader("Results")
+        if run_button:
+            user_prefs = {
+                "favorite_genre": favorite_genre,
+                "favorite_mood": favorite_mood,
+                "target_energy": target_energy,
+                "target_tempo_bpm": target_tempo_bpm,
+                "target_valence": target_valence,
+                "target_danceability": target_danceability,
+                "target_acousticness": target_acousticness,
+                "likes_acoustic": likes_acoustic,
+            }
+            workflow_result = run_recommendation_workflow(user_prefs, songs, k=top_k)
+            _render_profile_result("Recommendations", workflow_result)
+        else:
+            st.info("Choose a profile and click Generate recommendations to see ranked songs.")
+
+    with st.expander("How it works", expanded=False):
+        st.write(
+            "The app validates the user profile, ranks songs with deterministic scoring, retrieves grounded facts "
+            "for the top songs, and returns a short explanation with a confidence value."
+        )
+
+
+def run_cli_demo() -> None:
+    songs = load_songs(_songs_csv_path())
     print(f"Loaded songs: {len(songs)}")
 
     user_profiles = {
@@ -80,10 +179,18 @@ def main() -> None:
     user_prefs = user_profiles[selected_profile_name]
     print(f"Using profile: {selected_profile_name}")
 
-    recommendations = recommend_songs(user_prefs, songs, k=5)
+    workflow_result = run_recommendation_workflow(user_prefs, songs, k=5)
 
     print("\nTop recommendations:\n")
-    for rank, rec in enumerate(recommendations, start=1):
+    if workflow_result["warnings"]:
+        print("Profile warnings:")
+        for warning in workflow_result["warnings"]:
+            print(f" - {warning}")
+        print()
+
+    print(f"Confidence: {workflow_result['confidence']:.2f}\n")
+
+    for rank, rec in enumerate(workflow_result["recommendations"], start=1):
         song, score, explanation = rec
         print(f"{rank}. {song['title']}")
         print(f"   Final score: {score:.2f}")
@@ -156,7 +263,7 @@ def main() -> None:
     print("\nAdversarial profile simulation:\n")
     for profile_name, prefs in adversarial_profiles.items():
         print(f"Profile: {profile_name}")
-        flags = profile_warnings(prefs)
+        flags = run_recommendation_workflow(prefs, songs, k=3)["warnings"]
         if flags:
             print("  Flags:")
             for flag in flags:
@@ -164,11 +271,19 @@ def main() -> None:
         else:
             print("  Flags: none")
 
-        top = recommend_songs(prefs, songs, k=3)
+        top = run_recommendation_workflow(prefs, songs, k=3)["recommendations"]
         for rank, (song, score, explanation) in enumerate(top, start=1):
             print(f"  {rank}. {song['title']} | score={score:.2f}")
             print(f"     reasons: {explanation}")
         print()
+
+
+def main() -> None:
+    if get_script_run_ctx() is not None:
+        render_streamlit_app()
+        return
+
+    run_cli_demo()
 
 
 if __name__ == "__main__":
